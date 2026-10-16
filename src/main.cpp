@@ -13,6 +13,19 @@ String authorizedUIDs[] = {"D0 B5 C8 5F"};
 int numAuthorized = 1;
 
 
+#define GREEN_LED 25
+#define RED_LED   26
+#define BUZZER    27
+
+unsigned long indicatorStart = 0;
+unsigned long indicatorTime = 0;
+bool indicatorOn = false;
+
+String lastUID = "";
+unsigned long lastScanTime = 0;
+
+
+
 // Functions
 
 // getUID() turns the card's UID bytes into text, for example "4A 1F 9C 02"
@@ -47,6 +60,68 @@ bool isAuthorized(String uid)
   return false;
 }
 
+void startIndicatorTimer(unsigned long duration)
+{
+  indicatorStart = millis();
+  indicatorTime = duration;
+  indicatorOn = true;
+}
+
+void allIndicatorsOff()
+{
+  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(BUZZER, LOW);
+}
+
+void onAccessGranted()
+{
+  Serial.println("ACCESS GRANTED");
+  allIndicatorsOff();
+  digitalWrite(GREEN_LED, HIGH);
+  startIndicatorTimer(2000);
+}
+
+void onAccessDenied()
+{
+  Serial.println("ACCESS DENIED");
+  allIndicatorsOff();
+  digitalWrite(RED_LED, HIGH);
+  digitalWrite(BUZZER, HIGH);
+  startIndicatorTimer(1000);
+}
+
+void onTimerExpired()
+{
+  allIndicatorsOff();
+  indicatorOn = false;
+  Serial.println("Ready");
+}
+
+void onCardScanned(String uid)
+{
+  if (uid == lastUID && millis() - lastScanTime < 2000)
+  {
+    Serial.println("Repeat ignored");
+    return;
+  }
+  lastUID = uid;
+  lastScanTime = millis();
+
+  Serial.print("Card UID: ");
+  Serial.println(uid);
+
+  if (isAuthorized(uid) == true)
+  {
+    onAccessGranted();
+  }
+  else
+  {
+    onAccessDenied();
+  }
+}
+
+
 
 void setup()
 {
@@ -61,6 +136,10 @@ void setup()
   Serial.println("Tap a card...");
 
   // LED and buzzer code
+  pinMode(GREEN_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
 }
 
 void loop()
@@ -69,20 +148,15 @@ void loop()
   if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true)
   {
     String uid = getUID();
-    Serial.print("Card UID: ");
-    Serial.println(uid);
-
-    if (isAuthorized(uid) == true)
-    {
-      Serial.println("ACCESS GRANTED");
-    }
-    else
-    {
-      Serial.println("ACCESS DENIED");
-    }
-
+    onCardScanned(uid);
     rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
   }
 
+
   // Timer
+  if (indicatorOn == true && millis() - indicatorStart >= indicatorTime)
+  {
+    onTimerExpired();
+  }
 }
